@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nightstand Clock</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100;200;300;400&family=DM+Sans:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0c10;
+    --text: #e8eaf0;
+    --dim-text: #9ca3af;
+    --accent: #4a9eff;
+    --card: rgba(255,255,255,0.04);
+    --border: rgba(255,255,255,0.07);
+    --opacity: 1;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    cursor: pointer;
+    transition: opacity 0.8s ease;
+    opacity: var(--opacity);
+    overflow: hidden;
+  }
+
+  body.dimmed {
+    --opacity: 0.18;
+  }
+
+  /* subtle star-like background dots */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.15) 0%, transparent 100%),
+      radial-gradient(1px 1px at 70% 15%, rgba(255,255,255,0.1) 0%, transparent 100%),
+      radial-gradient(1px 1px at 45% 80%, rgba(255,255,255,0.12) 0%, transparent 100%),
+      radial-gradient(1px 1px at 85% 60%, rgba(255,255,255,0.08) 0%, transparent 100%),
+      radial-gradient(1px 1px at 10% 65%, rgba(255,255,255,0.1) 0%, transparent 100%);
+    pointer-events: none;
+  }
+
+  .container {
+    text-align: center;
+    padding: 2rem;
+    max-width: 900px;
+    width: 100%;
+  }
+
+  /* TIME */
+  .time {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 100;
+    font-size: clamp(5rem, 22vw, 16rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    text-shadow: 0 0 80px rgba(74,158,255,0.15);
+  }
+
+  .time .colon {
+    opacity: 1;
+    transition: opacity 0.1s;
+    display: inline-block;
+  }
+
+  .ampm {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 200;
+    font-size: clamp(1.2rem, 4vw, 2.5rem);
+    color: var(--dim-text);
+    letter-spacing: 0.15em;
+    margin-top: 0.5rem;
+    text-transform: uppercase;
+  }
+
+  /* DATE */
+  .date {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 200;
+    font-size: clamp(1rem, 3.5vw, 2rem);
+    color: var(--dim-text);
+    letter-spacing: 0.08em;
+    margin-top: 0.6rem;
+    text-transform: uppercase;
+  }
+
+  /* DIVIDER */
+  .divider {
+    width: 60px;
+    height: 1px;
+    background: var(--border);
+    margin: 2rem auto;
+  }
+
+  /* WEATHER */
+  .weather-section {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: clamp(1rem, 4vw, 3rem);
+    flex-wrap: wrap;
+  }
+
+  .weather-current {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .current-temp {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 200;
+    font-size: clamp(2.5rem, 8vw, 5rem);
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .current-desc {
+    font-size: clamp(0.75rem, 2vw, 1rem);
+    color: var(--dim-text);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  .current-feels {
+    font-size: clamp(0.65rem, 1.5vw, 0.85rem);
+    color: rgba(107,114,128,0.7);
+    letter-spacing: 0.06em;
+  }
+
+  /* Forecast cards */
+  .forecast {
+    display: flex;
+    gap: clamp(0.5rem, 2vw, 1.2rem);
+  }
+
+  .forecast-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: clamp(0.6rem, 2vw, 1rem) clamp(0.8rem, 2.5vw, 1.4rem);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 70px;
+  }
+
+  .forecast-day {
+    font-size: clamp(0.6rem, 1.5vw, 0.75rem);
+    color: var(--dim-text);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 400;
+  }
+
+  .forecast-icon {
+    font-size: clamp(1.4rem, 3vw, 2rem);
+    line-height: 1;
+  }
+
+  .forecast-temps {
+    display: flex;
+    gap: 0.4rem;
+    align-items: baseline;
+  }
+
+  .forecast-high {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 300;
+    font-size: clamp(0.9rem, 2vw, 1.2rem);
+    color: var(--text);
+  }
+
+  .forecast-low {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 200;
+    font-size: clamp(0.75rem, 1.5vw, 1rem);
+    color: var(--dim-text);
+  }
+
+  /* Status / location line */
+  .status {
+    margin-top: 1.5rem;
+    font-size: clamp(0.6rem, 1.5vw, 0.75rem);
+    color: rgba(180,185,200,0.7);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .dim-hint {
+    margin-top: 0.4rem;
+    font-size: clamp(0.55rem, 1.2vw, 0.7rem);
+    color: rgba(107,114,128,0.3);
+    letter-spacing: 0.08em;
+  }
+
+  body.dimmed .dim-hint {
+    opacity: 0;
+  }
+
+  .weather-error {
+    font-size: clamp(0.7rem, 1.8vw, 0.9rem);
+    color: rgba(107,114,128,0.6);
+    letter-spacing: 0.05em;
+  }
+
+  /* Unit toggle */
+  .unit-toggle {
+    position: fixed;
+    top: 1.2rem;
+    right: 1.5rem;
+    font-size: 0.75rem;
+    color: rgba(107,114,128,0.4);
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    transition: color 0.3s, border-color 0.3s;
+    z-index: 10;
+  }
+  .unit-toggle:hover { color: var(--dim-text); border-color: rgba(255,255,255,0.15); }
+</style>
+</head>
+<body>
+
+<div class="unit-toggle" id="unitToggle" title="Switch °F / °C">°F</div>
+
+<div class="container">
+  <div class="time" id="time">12:00</div>
+  <div class="ampm" id="ampm">AM</div>
+  <div class="date" id="date">Loading...</div>
+
+  <div class="divider"></div>
+
+  <div class="weather-section" id="weatherSection">
+    <div class="weather-error" id="weatherStatus">Requesting location…</div>
+  </div>
+
+  <div class="status" id="locationLabel"></div>
+  <div class="dim-hint">Tap anywhere to dim</div>
+</div>
+
+<script>
+  // ─── State ───────────────────────────────────────────────────────────────
+  let useFahrenheit = true;
+  let weatherData = null;
+  let dimmed = false;
+
+  // ─── Dim on tap ──────────────────────────────────────────────────────────
+  document.body.addEventListener('click', e => {
+    if (e.target.id === 'unitToggle') return;
+    dimmed = !dimmed;
+    document.body.classList.toggle('dimmed', dimmed);
+  });
+
+  // ─── Unit toggle ─────────────────────────────────────────────────────────
+  document.getElementById('unitToggle').addEventListener('click', e => {
+    e.stopPropagation();
+    useFahrenheit = !useFahrenheit;
+    document.getElementById('unitToggle').textContent = useFahrenheit ? '°F' : '°C';
+    if (weatherData) renderWeather(weatherData);
+  });
+
+  // ─── Clock ───────────────────────────────────────────────────────────────
+  function updateClock() {
+    const now = new Date();
+    let h = now.getHours();
+    const m = now.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+
+    document.getElementById('time').innerHTML =
+      `${h}<span class="colon">:</span>${String(m).padStart(2,'0')}`;
+    document.getElementById('ampm').textContent = ampm;
+
+    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const months = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    document.getElementById('date').textContent =
+      `${days[now.getDay()]}  ·  ${months[now.getMonth()]} ${now.getDate()}`;
+  }
+
+  // blink colon
+  setInterval(() => {
+    const c = document.querySelector('.colon');
+    if (c) c.style.opacity = c.style.opacity === '0' ? '1' : '0';
+  }, 1000);
+
+  updateClock();
+  setInterval(updateClock, 10000);
+
+  // ─── Weather helpers ──────────────────────────────────────────────────────
+  const WMO = {
+    0:  ['Clear','☀️'],
+    1:  ['Mostly Clear','🌤️'],
+    2:  ['Partly Cloudy','⛅'],
+    3:  ['Overcast','☁️'],
+    45: ['Foggy','🌫️'],
+    48: ['Foggy','🌫️'],
+    51: ['Drizzle','🌦️'],
+    53: ['Drizzle','🌦️'],
+    55: ['Heavy Drizzle','🌧️'],
+    61: ['Light Rain','🌧️'],
+    63: ['Rain','🌧️'],
+    65: ['Heavy Rain','🌧️'],
+    71: ['Light Snow','🌨️'],
+    73: ['Snow','❄️'],
+    75: ['Heavy Snow','❄️'],
+    80: ['Showers','🌦️'],
+    81: ['Showers','🌦️'],
+    82: ['Heavy Showers','⛈️'],
+    95: ['Thunderstorm','⛈️'],
+    96: ['Thunderstorm','⛈️'],
+    99: ['Severe Storm','⛈️'],
+  };
+
+  function wmo(code) {
+    return WMO[code] || ['Unknown','🌡️'];
+  }
+
+  function toF(c) { return Math.round(c * 9/5 + 32); }
+  function fmt(c) {
+    return useFahrenheit ? `${toF(c)}°` : `${Math.round(c)}°`;
+  }
+
+  function getDayName(dateStr, offset) {
+    const d = new Date(dateStr);
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    return days[d.getDay()];
+  }
+
+  function renderWeather(data) {
+    const ws = document.getElementById('weatherSection');
+    const cur = data.current;
+    const daily = data.daily;
+
+    const [desc, icon] = wmo(cur.weather_code);
+
+    let html = `
+      <div class="weather-current">
+        <div style="font-size:clamp(2rem,6vw,3.5rem);line-height:1">${icon}</div>
+        <div class="current-temp">${fmt(cur.temperature_2m)}</div>
+        <div class="current-desc">${desc}</div>
+        <div class="current-feels">Feels like ${fmt(cur.apparent_temperature)}</div>
+      </div>
+      <div class="forecast">
+    `;
+
+    for (let i = 0; i < 3; i++) {
+      const [, ficon] = wmo(daily.weather_code[i]);
+      html += `
+        <div class="forecast-card">
+          <div class="forecast-day">${i === 0 ? 'Today' : getDayName(daily.time[i])}</div>
+          <div class="forecast-icon">${ficon}</div>
+          <div class="forecast-temps">
+            <span class="forecast-high">${fmt(daily.temperature_2m_max[i])}</span>
+            <span class="forecast-low">${fmt(daily.temperature_2m_min[i])}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    html += `</div>`;
+    ws.innerHTML = html;
+  }
+
+  // ─── Fetch weather ────────────────────────────────────────────────────────
+  async function fetchWeather(lat, lon, cityName) {
+    document.getElementById('locationLabel').textContent = cityName || `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+    document.getElementById('weatherStatus').textContent = 'Loading weather…';
+
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+        + `&current=temperature_2m,apparent_temperature,weather_code`
+        + `&daily=weather_code,temperature_2m_max,temperature_2m_min`
+        + `&forecast_days=3&timezone=auto`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+      weatherData = data;
+      renderWeather(data);
+    } catch (err) {
+      document.getElementById('weatherSection').innerHTML =
+        `<div class="weather-error">Weather unavailable</div>`;
+    }
+  }
+
+  async function reverseGeocode(lat, lon) {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+      const d = await res.json();
+      return d.address?.city || d.address?.town || d.address?.village || d.address?.county || '';
+    } catch { return ''; }
+  }
+
+  function getLocation() {
+    if (!navigator.geolocation) {
+      document.getElementById('weatherSection').innerHTML =
+        `<div class="weather-error">Geolocation not supported</div>`;
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async pos => {
+        const { latitude: lat, longitude: lon } = pos.coords;
+        const city = await reverseGeocode(lat, lon);
+        await fetchWeather(lat, lon, city);
+        // refresh weather every 30 min
+        setInterval(async () => {
+          await fetchWeather(lat, lon, city);
+        }, 30 * 60 * 1000);
+      },
+      err => {
+        document.getElementById('weatherSection').innerHTML =
+          `<div class="weather-error">Allow location to see weather</div>`;
+        document.getElementById('locationLabel').textContent = 'Location access denied';
+      },
+      { timeout: 10000 }
+    );
+  }
+
+  getLocation();
+</script>
+</body>
+</html>
