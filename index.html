@@ -10,8 +10,8 @@
 
   :root {
     --bg: #0a0c10;
-    --text: #e8eaf0;
-    --dim-text: #9ca3af;
+    --text: #ffffff;
+    --dim-text: #c8cdd8;
     --accent: #4a9eff;
     --card: rgba(255,255,255,0.04);
     --border: rgba(255,255,255,0.07);
@@ -196,8 +196,9 @@
   /* Status / location line */
   .status {
     margin-top: 1.5rem;
-    font-size: clamp(0.6rem, 1.5vw, 0.75rem);
-    color: rgba(180,185,200,0.7);
+    margin-bottom: 3.5rem;
+    font-size: clamp(0.9rem, 2.5vw, 1.3rem);
+    color: rgba(210,215,230,0.9);
     letter-spacing: 0.1em;
     text-transform: uppercase;
   }
@@ -278,6 +279,8 @@
   });
 
   // ─── Clock ───────────────────────────────────────────────────────────────
+  let lastDay = new Date().getDate();
+
   function updateClock() {
     const now = new Date();
     let h = now.getHours();
@@ -294,6 +297,12 @@
                     'July','August','September','October','November','December'];
     document.getElementById('date').textContent =
       `${days[now.getDay()]}  ·  ${months[now.getMonth()]} ${now.getDate()}`;
+
+    // Refresh weather at midnight so forecast days roll over
+    if (now.getDate() !== lastDay) {
+      lastDay = now.getDate();
+      if (window._fetchWeatherFn) window._fetchWeatherFn();
+    }
   }
 
   // blink colon
@@ -339,8 +348,10 @@
     return useFahrenheit ? `${toF(c)}°` : `${Math.round(c)}°`;
   }
 
-  function getDayName(dateStr, offset) {
-    const d = new Date(dateStr);
+  function getDayName(dateStr) {
+    // Parse date as local date to avoid UTC offset shifting the day
+    const parts = dateStr.split('-');
+    const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
     const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     return days[d.getDay()];
   }
@@ -351,6 +362,16 @@
     const daily = data.daily;
 
     const [desc, icon] = wmo(cur.weather_code);
+
+    // Figure out today's date string to match against forecast dates
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+
+    // Find which forecast index matches today
+    let startIdx = 0;
+    for (let i = 0; i < daily.time.length; i++) {
+      if (daily.time[i] === todayStr) { startIdx = i; break; }
+    }
 
     let html = `
       <div class="weather-current">
@@ -363,14 +384,15 @@
     `;
 
     for (let i = 0; i < 3; i++) {
-      const [, ficon] = wmo(daily.weather_code[i]);
+      const idx = startIdx + i;
+      const [, ficon] = wmo(daily.weather_code[idx]);
       html += `
         <div class="forecast-card">
-          <div class="forecast-day">${i === 0 ? 'Today' : getDayName(daily.time[i])}</div>
+          <div class="forecast-day">${i === 0 ? 'Today' : getDayName(daily.time[idx])}</div>
           <div class="forecast-icon">${ficon}</div>
           <div class="forecast-temps">
-            <span class="forecast-high">${fmt(daily.temperature_2m_max[i])}</span>
-            <span class="forecast-low">${fmt(daily.temperature_2m_min[i])}</span>
+            <span class="forecast-high">${fmt(daily.temperature_2m_max[idx])}</span>
+            <span class="forecast-low">${fmt(daily.temperature_2m_min[idx])}</span>
           </div>
         </div>
       `;
@@ -380,17 +402,14 @@
     ws.innerHTML = html;
   }
 
-  // ─── Fetch weather ────────────────────────────────────────────────────────
+  // ─── Fetch weather by lat/lon ─────────────────────────────────────────────
   async function fetchWeather(lat, lon, cityName) {
-    document.getElementById('locationLabel').textContent = cityName || `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
-    document.getElementById('weatherStatus').textContent = 'Loading weather…';
-
+    document.getElementById('locationLabel').textContent = cityName || '';
     try {
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
         + `&current=temperature_2m,apparent_temperature,weather_code`
         + `&daily=weather_code,temperature_2m_max,temperature_2m_min`
         + `&forecast_days=3&timezone=auto`;
-
       const res = await fetch(url);
       const data = await res.json();
       weatherData = data;
@@ -401,40 +420,130 @@
     }
   }
 
-  async function reverseGeocode(lat, lon) {
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
-      const d = await res.json();
-      return d.address?.city || d.address?.town || d.address?.village || d.address?.county || '';
-    } catch { return ''; }
+  // ─── Zip code lookup ──────────────────────────────────────────────────────
+  async function lookupZip(zip) {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json&limit=1`);
+    const d = await res.json();
+    if (!d.length) throw new Error('ZIP not found');
+    return { lat: parseFloat(d[0].lat), lon: parseFloat(d[0].lon), name: d[0].display_name.split(',')[0] };
   }
 
-  function getLocation() {
-    if (!navigator.geolocation) {
-      document.getElementById('weatherSection').innerHTML =
-        `<div class="weather-error">Geolocation not supported</div>`;
-      return;
+  // ─── ZIP entry overlay ────────────────────────────────────────────────────
+  function showZipPrompt(errorMsg) {
+    const old = document.getElementById('zipOverlay');
+    if (old) old.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'zipOverlay';
+    overlay.style.cssText = `
+      position:fixed;inset:0;background:rgba(10,12,16,0.92);display:flex;
+      flex-direction:column;align-items:center;justify-content:center;
+      gap:1.2rem;z-index:100;font-family:'DM Sans',sans-serif;
+    `;
+    overlay.innerHTML = `
+      <div style="color:#9ca3af;font-size:0.8rem;letter-spacing:0.12em;text-transform:uppercase;">
+        Enter your ZIP code for weather
+      </div>
+      ${errorMsg ? `<div style="color:#f87171;font-size:0.75rem;letter-spacing:0.08em;">${errorMsg}</div>` : ''}
+      <div style="display:flex;gap:0.6rem;align-items:center;">
+        <input id="zipInput" type="number" inputmode="numeric" maxlength="5"
+          placeholder="12345"
+          style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);
+                 border-radius:10px;padding:0.6rem 1rem;color:#e8eaf0;font-size:1.4rem;
+                 font-family:'Outfit',sans-serif;font-weight:200;letter-spacing:0.1em;
+                 width:130px;text-align:center;outline:none;"
+        />
+        <button id="zipSubmit"
+          style="background:rgba(74,158,255,0.15);border:1px solid rgba(74,158,255,0.3);
+                 border-radius:10px;padding:0.6rem 1.2rem;color:#4a9eff;font-size:0.85rem;
+                 letter-spacing:0.08em;cursor:pointer;font-family:'DM Sans',sans-serif;">
+          GO
+        </button>
+      </div>
+      <div style="color:rgba(107,114,128,0.4);font-size:0.65rem;letter-spacing:0.06em;">
+        Saved locally — only asked once
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => e.stopPropagation());
+
+    const input = document.getElementById('zipInput');
+    const btn = document.getElementById('zipSubmit');
+    input.focus();
+
+    async function submitZip() {
+      const zip = input.value.trim();
+      if (zip.length !== 5) { input.style.borderColor = '#f87171'; return; }
+      btn.textContent = '...';
+      try {
+        const loc = await lookupZip(zip);
+        localStorage.setItem('nightstand_zip', zip);
+        localStorage.setItem('nightstand_city', loc.name);
+        overlay.remove();
+        await fetchWeather(loc.lat, loc.lon, loc.name);
+        window._fetchWeatherFn = () => fetchWeather(loc.lat, loc.lon, loc.name);
+        setInterval(() => fetchWeather(loc.lat, loc.lon, loc.name), 30 * 60 * 1000);
+      } catch (e) {
+        overlay.remove();
+        showZipPrompt('ZIP code not found — try again');
+      }
     }
-    navigator.geolocation.getCurrentPosition(
-      async pos => {
-        const { latitude: lat, longitude: lon } = pos.coords;
-        const city = await reverseGeocode(lat, lon);
-        await fetchWeather(lat, lon, city);
-        // refresh weather every 30 min
-        setInterval(async () => {
-          await fetchWeather(lat, lon, city);
-        }, 30 * 60 * 1000);
-      },
-      err => {
-        document.getElementById('weatherSection').innerHTML =
-          `<div class="weather-error">Allow location to see weather</div>`;
-        document.getElementById('locationLabel').textContent = 'Location access denied';
-      },
-      { timeout: 10000 }
-    );
+
+    btn.addEventListener('click', submitZip);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submitZip(); });
   }
 
-  getLocation();
+  // ─── Startup ──────────────────────────────────────────────────────────────
+  async function init() {
+    // Check saved ZIP first
+    const savedZip = localStorage.getItem('nightstand_zip');
+    const savedCity = localStorage.getItem('nightstand_city');
+    if (savedZip) {
+      try {
+        const loc = await lookupZip(savedZip);
+        await fetchWeather(loc.lat, loc.lon, savedCity || loc.name);
+        window._fetchWeatherFn = () => fetchWeather(loc.lat, loc.lon, savedCity || loc.name);
+        setInterval(() => fetchWeather(loc.lat, loc.lon, savedCity || loc.name), 30 * 60 * 1000);
+        return;
+      } catch (e) { /* fall through */ }
+    }
+
+    // Try geolocation first
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async pos => {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+            const d = await res.json();
+            const city = d.address?.city || d.address?.town || d.address?.village || '';
+            await fetchWeather(lat, lon, city);
+            window._fetchWeatherFn = () => fetchWeather(lat, lon, city);
+            setInterval(() => fetchWeather(lat, lon, city), 30 * 60 * 1000);
+          } catch {
+            await fetchWeather(lat, lon, '');
+            window._fetchWeatherFn = () => fetchWeather(lat, lon, '');
+          }
+        },
+        () => showZipPrompt(),
+        { timeout: 6000 }
+      );
+    } else {
+      showZipPrompt();
+    }
+  }
+
+  // Small "change location" button
+  const changeBtn = document.createElement('div');
+  changeBtn.textContent = 'change location';
+  changeBtn.style.cssText = `
+    position:fixed;bottom:1rem;left:1.5rem;font-size:0.6rem;color:rgba(107,114,128,0.3);
+    letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;z-index:10;
+  `;
+  changeBtn.addEventListener('click', e => { e.stopPropagation(); showZipPrompt(); });
+  document.body.appendChild(changeBtn);
+
+  init();
 </script>
 </body>
 </html>
