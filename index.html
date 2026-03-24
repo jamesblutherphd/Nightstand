@@ -555,6 +555,24 @@
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
+  // ─── Wake Lock (keep screen on) ───────────────────────────────────────────
+  let wakeLock = null;
+
+  async function requestWakeLock() {
+    if ('wakeLock' in navigator) {
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+      } catch (e) { /* silently ignore if denied */ }
+    }
+  }
+
+  // Re-acquire wake lock if page becomes visible again (e.g. switching back to app)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') requestWakeLock();
+  });
+
+  requestWakeLock();
+
   init();
 </script>
 </body>
