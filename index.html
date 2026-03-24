@@ -2,7 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Nightstand">
+<meta name="theme-color" content="#0a0c10">
+<link rel="manifest" href="manifest.json">
 <title>Nightstand Clock</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100;200;300;400&family=DM+Sans:wght@300;400&display=swap" rel="stylesheet">
 <style>
@@ -55,6 +61,7 @@
   .container {
     text-align: center;
     padding: 2rem;
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom));
     max-width: 900px;
     width: 100%;
   }
@@ -542,6 +549,11 @@
   `;
   changeBtn.addEventListener('click', e => { e.stopPropagation(); showZipPrompt(); });
   document.body.appendChild(changeBtn);
+
+  // ─── Service Worker ───────────────────────────────────────────────────────
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
 
   init();
 </script>
