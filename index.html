@@ -227,6 +227,17 @@
     letter-spacing: 0.05em;
   }
 
+  .sun-times {
+    width: 100%;
+    text-align: center;
+    margin-top: 1rem;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 200;
+    font-size: clamp(0.9rem, 2.5vw, 1.3rem);
+    color: var(--dim-text);
+    letter-spacing: 0.1em;
+  }
+
   /* Unit toggle */
   .unit-toggle {
     position: fixed;
@@ -363,6 +374,14 @@
     return days[d.getDay()];
   }
 
+  function formatSunTime(isoStr) {
+    const d = new Date(isoStr);
+    let h = d.getHours(), m = d.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${h}:${String(m).padStart(2,'0')} ${ampm}`;
+  }
+
   function renderWeather(data) {
     const ws = document.getElementById('weatherSection');
     const cur = data.current;
@@ -379,6 +398,9 @@
     for (let i = 0; i < daily.time.length; i++) {
       if (daily.time[i] === todayStr) { startIdx = i; break; }
     }
+
+    const sunrise = daily.sunrise ? formatSunTime(daily.sunrise[startIdx]) : null;
+    const sunset  = daily.sunset  ? formatSunTime(daily.sunset[startIdx])  : null;
 
     let html = `
       <div class="weather-current">
@@ -406,6 +428,15 @@
     }
 
     html += `</div>`;
+
+    if (sunrise && sunset) {
+      html += `
+        <div class="sun-times">
+          Sunrise ${sunrise}&nbsp;&nbsp;·&nbsp;&nbsp;Sunset ${sunset}
+        </div>
+      `;
+    }
+
     ws.innerHTML = html;
   }
 
@@ -415,7 +446,7 @@
     try {
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
         + `&current=temperature_2m,apparent_temperature,weather_code`
-        + `&daily=weather_code,temperature_2m_max,temperature_2m_min`
+        + `&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset`
         + `&forecast_days=3&timezone=auto`;
       const res = await fetch(url);
       const data = await res.json();
