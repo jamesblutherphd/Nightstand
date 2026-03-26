@@ -150,6 +150,13 @@
   }
 
   /* Forecast cards */
+  .forecast-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.7rem;
+  }
+
   .forecast {
     display: flex;
     gap: clamp(0.5rem, 2vw, 1.2rem);
@@ -228,14 +235,12 @@
   }
 
   .sun-times {
-    width: 100%;
     text-align: center;
-    margin-top: 1rem;
     font-family: 'Outfit', sans-serif;
     font-weight: 200;
-    font-size: clamp(0.9rem, 2.5vw, 1.3rem);
+    font-size: clamp(0.8rem, 2vw, 1.1rem);
     color: var(--dim-text);
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
   }
 
   /* Unit toggle */
@@ -409,7 +414,8 @@
         <div class="current-desc">${desc}</div>
         <div class="current-feels">Feels like ${fmt(cur.apparent_temperature)}</div>
       </div>
-      <div class="forecast">
+      <div class="forecast-group">
+        <div class="forecast">
     `;
 
     for (let i = 0; i < 3; i++) {
@@ -427,7 +433,7 @@
       `;
     }
 
-    html += `</div>`;
+    html += `</div>`; // close .forecast
 
     if (sunrise && sunset) {
       html += `
@@ -436,6 +442,8 @@
         </div>
       `;
     }
+
+    html += `</div>`; // close .forecast-group
 
     ws.innerHTML = html;
   }
