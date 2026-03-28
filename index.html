@@ -83,6 +83,15 @@
     display: inline-block;
   }
 
+  .time .seconds {
+    font-size: 0.28em;
+    font-weight: 200;
+    vertical-align: super;
+    color: var(--dim-text);
+    letter-spacing: 0.05em;
+    margin-left: 0.1em;
+  }
+
   .ampm {
     font-family: 'Outfit', sans-serif;
     font-weight: 200;
@@ -126,6 +135,61 @@
     flex-direction: column;
     align-items: center;
     gap: 0.3rem;
+    cursor: pointer;
+    padding: 0.6rem 1rem;
+    border-radius: 16px;
+    border: 1px solid transparent;
+    transition: border-color 0.3s, background 0.3s;
+  }
+
+  .weather-current:hover,
+  .weather-current:active {
+    border-color: rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .weather-current .tap-hint {
+    font-size: clamp(0.5rem, 1.2vw, 0.65rem);
+    color: rgba(107,114,128,0.35);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 0.2rem;
+  }
+
+  /* Radar overlay */
+  #radarOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,12,16,0.95);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+
+  #radarOverlay.visible {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  #radarOverlay iframe {
+    width: min(95vw, 900px);
+    height: min(75vh, 600px);
+    border: none;
+    border-radius: 16px;
+    background: #111;
+  }
+
+  #radarOverlay .radar-label {
+    margin-top: 1rem;
+    font-size: 0.7rem;
+    color: rgba(107,114,128,0.5);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
   }
 
   .current-temp {
@@ -263,6 +327,11 @@
 </head>
 <body>
 
+<div id="radarOverlay">
+  <iframe id="radarFrame" src="" allowfullscreen></iframe>
+  <div class="radar-label">Tap anywhere to close</div>
+</div>
+
 <div class="unit-toggle" id="unitToggle" title="Switch °F / °C">°F</div>
 
 <div class="container">
@@ -285,10 +354,34 @@
   let useFahrenheit = true;
   let weatherData = null;
   let dimmed = false;
+  let currentLat = null, currentLon = null;
+
+  // ─── Radar overlay ────────────────────────────────────────────────────────
+  function openRadar() {
+    if (currentLat === null) return;
+    const overlay = document.getElementById('radarOverlay');
+    const frame = document.getElementById('radarFrame');
+    // RainViewer embed centered on user's location
+    const zoom = 8;
+    frame.src = `https://www.rainviewer.com/map.html?loc=${currentLat},${currentLon},${zoom}&oFa=0&oC=0&oU=0&oCS=1&oF=0&oAP=1&rmt=4&c=3&o=83&lm=1&layer=radar&sm=1&sn=1`;
+    overlay.classList.add('visible');
+  }
+
+  function closeRadar() {
+    const overlay = document.getElementById('radarOverlay');
+    overlay.classList.remove('visible');
+    // Stop the iframe from continuing to load/animate when hidden
+    setTimeout(() => { document.getElementById('radarFrame').src = ''; }, 400);
+  }
+
+  document.getElementById('radarOverlay').addEventListener('click', closeRadar);
 
   // ─── Dim on tap ──────────────────────────────────────────────────────────
   document.body.addEventListener('click', e => {
     if (e.target.id === 'unitToggle') return;
+    if (e.target.closest('#radarOverlay')) return;
+    if (e.target.closest('#weatherCurrent')) return;
+    if (e.target.closest('#zipOverlay')) return;
     dimmed = !dimmed;
     document.body.classList.toggle('dimmed', dimmed);
   });
@@ -308,11 +401,12 @@
     const now = new Date();
     let h = now.getHours();
     const m = now.getMinutes();
+    const s = now.getSeconds();
     const ampm = h >= 12 ? 'PM' : 'AM';
     h = h % 12 || 12;
 
     document.getElementById('time').innerHTML =
-      `${h}<span class="colon">:</span>${String(m).padStart(2,'0')}`;
+      `${h}<span class="colon">:</span>${String(m).padStart(2,'0')}<span class="seconds">${String(s).padStart(2,'0')}</span>`;
     document.getElementById('ampm').textContent = ampm;
 
     const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -328,14 +422,8 @@
     }
   }
 
-  // blink colon
-  setInterval(() => {
-    const c = document.querySelector('.colon');
-    if (c) c.style.opacity = c.style.opacity === '0' ? '1' : '0';
-  }, 1000);
-
   updateClock();
-  setInterval(updateClock, 10000);
+  setInterval(updateClock, 1000);
 
   // ─── Weather helpers ──────────────────────────────────────────────────────
   const WMO = {
@@ -408,11 +496,12 @@
     const sunset  = daily.sunset  ? formatSunTime(daily.sunset[startIdx])  : null;
 
     let html = `
-      <div class="weather-current">
+      <div class="weather-current" id="weatherCurrent">
         <div style="font-size:clamp(2rem,6vw,3.5rem);line-height:1">${icon}</div>
         <div class="current-temp">${fmt(cur.temperature_2m)}</div>
         <div class="current-desc">${desc}</div>
         <div class="current-feels">Feels like ${fmt(cur.apparent_temperature)}</div>
+        <div class="tap-hint">tap for radar</div>
       </div>
       <div class="forecast-group">
         <div class="forecast">
@@ -450,6 +539,7 @@
 
   // ─── Fetch weather by lat/lon ─────────────────────────────────────────────
   async function fetchWeather(lat, lon, cityName) {
+    currentLat = lat; currentLon = lon;
     document.getElementById('locationLabel').textContent = cityName || '';
     try {
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
@@ -465,6 +555,10 @@
         `<div class="weather-error">Weather unavailable</div>`;
     }
   }
+
+  document.getElementById('weatherSection').addEventListener('click', e => {
+    if (e.target.closest('#weatherCurrent')) openRadar();
+  });
 
   // ─── Zip code lookup ──────────────────────────────────────────────────────
   async function lookupZip(zip) {
