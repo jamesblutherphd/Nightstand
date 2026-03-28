@@ -331,7 +331,7 @@
 <body>
 
 <div id="radarOverlay">
-  <iframe id="radarFrame" src="" allowfullscreen></iframe>
+  <iframe id="radarFrame" src="" allow="autoplay" allowfullscreen></iframe>
   <div class="radar-label">Tap anywhere to close</div>
 </div>
 
@@ -364,9 +364,9 @@
     if (currentLat === null) return;
     const overlay = document.getElementById('radarOverlay');
     const frame = document.getElementById('radarFrame');
-    // RainViewer embed centered on user's location
+    // RainViewer embed centered on user's location, location services disabled
     const zoom = 8;
-    frame.src = `https://www.rainviewer.com/map.html?loc=${currentLat},${currentLon},${zoom}&oFa=0&oC=0&oU=0&oCS=1&oF=0&oAP=1&rmt=4&c=3&o=83&lm=1&layer=radar&sm=1&sn=1`;
+    frame.src = `https://www.rainviewer.com/map.html?loc=${currentLat},${currentLon},${zoom}&oFa=0&oC=0&oU=0&oCS=1&oF=0&oAP=1&rmt=4&c=3&o=83&lm=1&layer=radar&sm=1&sn=1&nf=1`;
     overlay.classList.add('visible');
   }
 
