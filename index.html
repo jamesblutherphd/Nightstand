@@ -405,7 +405,7 @@
 
   function initRadarMap(container) {
     const map = L.map(container, { zoomControl: true, attributionControl: false })
-      .setView([currentLat, currentLon], 9);
+      .setView([currentLat, currentLon], 8);
 
     // Light base map so small islands like Key West are visible
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
@@ -434,7 +434,7 @@
         frames.forEach((frame, i) => {
           const layer = L.tileLayer(
             `${host}${frame.path}/512/{z}/{x}/{y}/8/1_1.png`,
-            { opacity: 0, maxZoom: 15, tileSize: 512, zoomOffset: -1 }
+            { opacity: 0, maxZoom: 18, tileSize: 512, zoomOffset: -1 }
           ).addTo(map);
           layers.push(layer);
         });
