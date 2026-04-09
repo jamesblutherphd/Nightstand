@@ -405,7 +405,7 @@
 
   function initRadarMap(container) {
     const map = L.map(container, { zoomControl: true, attributionControl: false })
-      .setView([currentLat, currentLon], 7);
+      .setView([currentLat, currentLon], 9);
 
     // Light base map so small islands like Key West are visible
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
