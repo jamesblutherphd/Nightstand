@@ -434,7 +434,7 @@
         frames.forEach((frame, i) => {
           const layer = L.tileLayer(
             `${host}${frame.path}/512/{z}/{x}/{y}/8/1_1.png`,
-            { opacity: 0, maxZoom: 18, tileSize: 512, zoomOffset: -1 }
+            { opacity: 0, maxZoom: 18, maxNativeZoom: 8, tileSize: 512, zoomOffset: -1 }
           ).addTo(map);
           layers.push(layer);
         });
