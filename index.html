@@ -702,6 +702,13 @@
           GO
         </button>
       </div>
+      <button id="useLocationBtn"
+        style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);
+               border-radius:10px;padding:0.5rem 1.2rem;color:#9ca3af;font-size:0.78rem;
+               letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;
+               font-family:'DM Sans',sans-serif;">
+        📍 Use My Location Instead
+      </button>
       <div style="color:rgba(107,114,128,0.4);font-size:0.65rem;letter-spacing:0.06em;">
         Saved locally — only asked once
       </div>
@@ -720,6 +727,7 @@
       try {
         const loc = await lookupZip(zip);
         localStorage.setItem('nightstand_zip', zip);
+        localStorage.removeItem('nightstand_city_gps'); // clear GPS flag
         localStorage.setItem('nightstand_city', loc.name);
         overlay.remove();
         await fetchWeather(loc.lat, loc.lon, loc.name);
@@ -733,6 +741,37 @@
 
     btn.addEventListener('click', submitZip);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') submitZip(); });
+
+    // Use My Location button — clears ZIP and tries GPS
+    document.getElementById('useLocationBtn').addEventListener('click', () => {
+      localStorage.removeItem('nightstand_zip');
+      localStorage.removeItem('nightstand_city');
+      overlay.remove();
+      useGPS();
+    });
+  }
+
+  // ─── GPS location ─────────────────────────────────────────────────────────
+  function useGPS() {
+    if (!navigator.geolocation) { showZipPrompt('Geolocation not supported'); return; }
+    navigator.geolocation.getCurrentPosition(
+      async pos => {
+        const { latitude: lat, longitude: lon } = pos.coords;
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+          const d = await res.json();
+          const city = d.address?.city || d.address?.town || d.address?.village || '';
+          await fetchWeather(lat, lon, city);
+          window._fetchWeatherFn = () => fetchWeather(lat, lon, city);
+          setInterval(() => fetchWeather(lat, lon, city), 30 * 60 * 1000);
+        } catch {
+          await fetchWeather(lat, lon, '');
+          window._fetchWeatherFn = () => fetchWeather(lat, lon, '');
+        }
+      },
+      () => showZipPrompt('Location access denied — please enter ZIP'),
+      { timeout: 6000 }
+    );
   }
 
   // ─── Startup ──────────────────────────────────────────────────────────────
@@ -750,29 +789,8 @@
       } catch (e) { /* fall through */ }
     }
 
-    // Try geolocation first
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async pos => {
-          const { latitude: lat, longitude: lon } = pos.coords;
-          try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
-            const d = await res.json();
-            const city = d.address?.city || d.address?.town || d.address?.village || '';
-            await fetchWeather(lat, lon, city);
-            window._fetchWeatherFn = () => fetchWeather(lat, lon, city);
-            setInterval(() => fetchWeather(lat, lon, city), 30 * 60 * 1000);
-          } catch {
-            await fetchWeather(lat, lon, '');
-            window._fetchWeatherFn = () => fetchWeather(lat, lon, '');
-          }
-        },
-        () => showZipPrompt(),
-        { timeout: 6000 }
-      );
-    } else {
-      showZipPrompt();
-    }
+    // Try geolocation
+    useGPS();
   }
 
   // Small "change location" button
