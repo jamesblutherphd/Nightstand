@@ -385,11 +385,12 @@
     const container = document.getElementById('radarContainer');
 
     overlay.classList.add('visible');
-    if (window._radarAnimStart) window._radarAnimStart();
 
-    // Only init the map once
-    if (window._radarInitialized) return;
-    window._radarInitialized = true;
+    // Init the map only once, but always refresh radar frames
+    if (window._radarMapReady) {
+      refreshRadarFrames();
+      return;
+    }
 
     // Load Leaflet dynamically
     const link = document.createElement('link');
@@ -404,15 +405,30 @@
   }
 
   function initRadarMap(container) {
-    const map = L.map(container, { zoomControl: true, attributionControl: false })
+    window._radarMap = L.map(container, { zoomControl: true, attributionControl: false })
       .setView([currentLat, currentLon], 8);
 
     // Light base map so small islands like Key West are visible
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       maxZoom: 19
-    }).addTo(map);
+    }).addTo(window._radarMap);
 
-    // Fetch RainViewer API for radar frames
+    window._radarMapReady = true;
+    refreshRadarFrames();
+  }
+
+  function refreshRadarFrames() {
+    // Stop any existing animation
+    if (window._radarAnimStop) window._radarAnimStop();
+
+    // Remove old radar layers
+    if (window._radarLayers) {
+      window._radarLayers.forEach(l => window._radarMap.removeLayer(l));
+    }
+    window._radarLayers = [];
+
+    document.getElementById('radarTimestamp').textContent = 'Loading…';
+
     fetch('https://api.rainviewer.com/public/weather-maps.json')
       .then(r => r.json())
       .then(data => {
@@ -427,7 +443,6 @@
 
         // Start at the last real (past) frame — most current actual radar
         let currentFrame = Math.min(past.slice(-3).length - 1, frames.length - 1);
-        let layers = [];
         let animInterval = null;
 
         // Pre-create all tile layers
@@ -435,12 +450,12 @@
           const layer = L.tileLayer(
             `${host}${frame.path}/512/{z}/{x}/{y}/8/1_1.png`,
             { opacity: 0, maxZoom: 18, maxNativeZoom: 8, tileSize: 512, zoomOffset: -1 }
-          ).addTo(map);
-          layers.push(layer);
+          ).addTo(window._radarMap);
+          window._radarLayers.push(layer);
         });
 
         function showFrame(idx) {
-          layers.forEach((l, i) => l.setOpacity(i === idx ? 0.7 : 0));
+          window._radarLayers.forEach((l, i) => l.setOpacity(i === idx ? 0.7 : 0));
           currentFrame = idx;
 
           // Update timestamp label
@@ -459,14 +474,7 @@
           showFrame(next);
         }, 800);
 
-        // Stop animation when overlay closes, restart when opened
-        window._radarAnimStop  = () => clearInterval(animInterval);
-        window._radarAnimStart = () => {
-          animInterval = setInterval(() => {
-            const next = (currentFrame + 1) % frames.length;
-            showFrame(next);
-          }, 800);
-        };
+        window._radarAnimStop = () => clearInterval(animInterval);
       });
   }
 
