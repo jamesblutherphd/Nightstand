@@ -35,14 +35,46 @@
     justify-content: center;
     user-select: none;
     cursor: pointer;
-    transition: opacity 0.8s ease;
-    opacity: var(--opacity);
     overflow: hidden;
   }
 
   body.dimmed {
     --opacity: 0.18;
+    --alert-opacity: 0.8;
   }
+
+  /* Dim everything except the rain/storm heads-up */
+  .container > *,
+  .unit-toggle {
+    transition: opacity 0.8s ease;
+    opacity: var(--opacity);
+  }
+
+  /* Heads-up banner (stays readable while dimmed) */
+  .alert-banner {
+    display: none;
+    margin: 1rem auto 0;
+    padding: 0.5rem 1.4rem;
+    border-radius: 14px;
+    border: 1px solid;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 300;
+    font-size: clamp(1.1rem, 3.2vw, 1.9rem);
+    letter-spacing: 0.04em;
+    max-width: 92%;
+  }
+  .alert-banner.show { display: inline-block; }
+  .alert-banner.storm {
+    color: #ffb454;
+    border-color: rgba(255,180,84,0.55);
+    background: rgba(255,180,84,0.09);
+  }
+  .alert-banner.rain {
+    color: #8fd0ff;
+    border-color: rgba(143,208,255,0.45);
+    background: rgba(143,208,255,0.08);
+  }
+  .container > #alertBanner { opacity: var(--alert-opacity, 1); }
 
   /* subtle star-like background dots */
   body::before {
@@ -176,7 +208,7 @@
   }
 
   #radarOverlay.visible {
-    opacity: 1;
+    opacity: var(--opacity);
     pointer-events: all;
   }
 
@@ -360,6 +392,7 @@
   <div class="time" id="time">12:00</div>
   <div class="ampm" id="ampm">AM</div>
   <div class="date" id="date">Loading...</div>
+  <div class="alert-banner" id="alertBanner"></div>
 
   <div class="divider"></div>
 
@@ -377,6 +410,12 @@
   let weatherData = null;
   let dimmed = false;
   let currentLat = null, currentLon = null;
+  let currentCity = '';
+  let weatherKey = '';
+  let lastWeatherOk = null;          // time of last successful weather fetch
+  const MAX_STALE_MS = 2 * 60 * 60 * 1000;   // after 2 hours, show "Weather unavailable"
+  let alertState = null;             // { kind, eventUtcMs, fetchedAt }
+  let lastAlertText = '';
 
   // ─── Radar overlay ────────────────────────────────────────────────────────
   function openRadar() {
@@ -525,6 +564,8 @@
     document.getElementById('date').textContent =
       `${days[now.getDay()]}  ·  ${months[now.getMonth()]} ${now.getDate()}`;
 
+    checkFreshness();
+
     // Refresh weather at midnight so forecast days roll over
     if (now.getDate() !== lastDay) {
       lastDay = now.getDate();
@@ -647,24 +688,156 @@
     ws.innerHTML = html;
   }
 
+  // ─── Refresh scheduling ───────────────────────────────────────────────────
+  function startWeatherRefresh(fn) {
+    window._fetchWeatherFn = fn;
+    if (window._weatherTimer) clearInterval(window._weatherTimer);
+    window._weatherTimer = setInterval(fn, 30 * 60 * 1000);
+  }
+
   // ─── Fetch weather by lat/lon ─────────────────────────────────────────────
   async function fetchWeather(lat, lon, cityName) {
     currentLat = lat; currentLon = lon;
-    document.getElementById('locationLabel').textContent = cityName || '';
+    currentCity = cityName || '';
+
+    // New place? Old weather must not be shown for it.
+    const key = lat.toFixed(1) + ',' + lon.toFixed(1);
+    if (key !== weatherKey) { weatherKey = key; weatherData = null; alertState = null; }
+    updateStatusLabel();
+
     try {
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
         + `&current=temperature_2m,apparent_temperature,weather_code`
         + `&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset`
         + `&forecast_days=3&timezone=auto`;
       const res = await fetch(url);
+      if (!res.ok) throw new Error('weather http ' + res.status);
       const data = await res.json();
+      if (!data.current || !data.daily) throw new Error('bad weather data');
       weatherData = data;
+      lastWeatherOk = Date.now();
+      if (window._retryTimer) { clearTimeout(window._retryTimer); window._retryTimer = null; }
       renderWeather(data);
+      updateStatusLabel();
+      fetchAlerts(lat, lon);
     } catch (err) {
+      // Keep showing the last good data; checkFreshness() expires it after 2 hours.
+      if (!weatherData) {
+        document.getElementById('weatherSection').innerHTML =
+          `<div class="weather-error">Weather unavailable</div>`;
+      }
+      if (window._retryTimer) clearTimeout(window._retryTimer);
+      window._retryTimer = setTimeout(() => {
+        if (window._fetchWeatherFn) window._fetchWeatherFn();
+      }, 5 * 60 * 1000);   // retry in 5 minutes
+    }
+  }
+
+  // ─── Staleness + status line ──────────────────────────────────────────────
+  function fmtAge(min) {
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60), m = min % 60;
+    return m ? `${h} hr ${m} min` : `${h} hr`;
+  }
+
+  function updateStatusLabel() {
+    const el = document.getElementById('locationLabel');
+    if (!el) return;
+    let t = currentCity || '';
+    if (weatherData && lastWeatherOk) {
+      const age = Math.floor((Date.now() - lastWeatherOk) / 60000);
+      if (age >= 40) t += (t ? '  ·  ' : '') + 'updated ' + fmtAge(age) + ' ago';
+    }
+    if (el.textContent !== t) el.textContent = t;
+  }
+
+  function checkFreshness() {
+    if (weatherData && lastWeatherOk && Date.now() - lastWeatherOk > MAX_STALE_MS) {
+      weatherData = null;
       document.getElementById('weatherSection').innerHTML =
         `<div class="weather-error">Weather unavailable</div>`;
     }
+    updateStatusLabel();
+    renderAlert();
   }
+
+  // ─── Rain / thunderstorm heads-up ─────────────────────────────────────────
+  const STORM_CODES = [95, 96, 99];
+  const RAIN_CODES  = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82];
+
+  async function fetchAlerts(lat, lon) {
+    try {
+      const base = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+        + `&timezone=auto&forecast_days=2`;
+      // 15-minute data where available (e.g. North America); otherwise hourly
+      let res = await fetch(base + `&minutely_15=weather_code,precipitation&hourly=weather_code`);
+      if (!res.ok) res = await fetch(base + `&hourly=weather_code`);
+      if (!res.ok) throw new Error('alert http ' + res.status);
+      const d = await res.json();
+
+      const offMs = (d.utc_offset_seconds || 0) * 1000;
+      const useM = d.minutely_15 && d.minutely_15.time && d.minutely_15.weather_code;
+      const series = useM ? d.minutely_15 : d.hourly;
+      if (!series || !series.time) throw new Error('no series');
+      const slotMs = useM ? 15 * 60000 : 60 * 60000;
+      const nowMs = Date.now();
+
+      let storm = null, rain = null, rainNow = false;
+      for (let i = 0; i < series.time.length; i++) {
+        const startUtc = Date.parse(series.time[i] + 'Z') - offMs;
+        if (startUtc + slotMs < nowMs) continue;              // slot already over
+        if (startUtc > nowMs + 3 * 3600 * 1000) break;        // look ahead 3 hours
+        const code = series.weather_code[i];
+        const precip = useM && series.precipitation ? series.precipitation[i] : 0;
+        const isRain = RAIN_CODES.includes(code) || precip >= 0.2;
+        if (STORM_CODES.includes(code)) { storm = Math.max(startUtc, nowMs); break; }
+        if (isRain) {
+          if (startUtc <= nowMs) rainNow = true;              // already raining
+          else if (!rain && !rainNow) rain = startUtc;
+        }
+      }
+
+      if (storm !== null)      alertState = { kind: 'storm', eventUtcMs: storm, fetchedAt: nowMs };
+      else if (rain !== null)  alertState = { kind: 'rain',  eventUtcMs: rain,  fetchedAt: nowMs };
+      else                     alertState = null;
+      renderAlert();
+    } catch (e) {
+      // keep whatever we had; renderAlert() hides it once it is too old to trust
+    }
+  }
+
+  function formatEta(min) {
+    if (min < 60) return `${Math.max(5, Math.round(min / 5) * 5)} min`;
+    let h = Math.floor(min / 60), m = Math.round((min % 60) / 15) * 15;
+    if (m === 60) { h += 1; m = 0; }
+    return m ? `${h} hr ${m} min` : `${h} hr`;
+  }
+
+  function renderAlert() {
+    const el = document.getElementById('alertBanner');
+    if (!el) return;
+    let text = '', kind = '';
+    const fresh = alertState && weatherData && (Date.now() - alertState.fetchedAt) < 45 * 60000;
+    if (fresh) {
+      const eta = (alertState.eventUtcMs - Date.now()) / 60000;
+      if (alertState.kind === 'storm') {
+        kind = 'storm';
+        text = eta <= 2 ? '⛈ Thunderstorm activity now'
+                        : `⛈ Thunderstorms possible in ~${formatEta(eta)}`;
+      } else if (eta > 2) {
+        kind = 'rain';
+        text = `🌧 Rain expected in ~${formatEta(eta)}`;
+      }
+    }
+    if (text !== lastAlertText) {
+      lastAlertText = text;
+      el.textContent = text;
+      el.className = text ? `alert-banner show ${kind}` : 'alert-banner';
+    }
+  }
+
+  // Check for approaching rain/storms every 10 minutes
+  setInterval(() => { if (currentLat !== null) fetchAlerts(currentLat, currentLon); }, 10 * 60 * 1000);
 
   document.getElementById('weatherSection').addEventListener('click', e => {
     if (e.target.closest('#weatherCurrent')) openRadar();
@@ -743,8 +916,7 @@
         localStorage.setItem('nightstand_city', loc.name);
         overlay.remove();
         await fetchWeather(loc.lat, loc.lon, loc.name);
-        window._fetchWeatherFn = () => fetchWeather(loc.lat, loc.lon, loc.name);
-        setInterval(() => fetchWeather(loc.lat, loc.lon, loc.name), 30 * 60 * 1000);
+        startWeatherRefresh(() => fetchWeather(loc.lat, loc.lon, loc.name));
       } catch (e) {
         overlay.remove();
         showZipPrompt('Location not found — try a different city or ZIP');
@@ -767,6 +939,7 @@
       overlay.remove();
       document.getElementById('weatherSection').innerHTML =
         `<div class="weather-error">Weather unavailable</div>`;
+      currentCity = '';
       document.getElementById('locationLabel').textContent = '';
     });
   }
@@ -782,11 +955,10 @@
           const d = await res.json();
           const city = d.address?.city || d.address?.town || d.address?.village || '';
           await fetchWeather(lat, lon, city);
-          window._fetchWeatherFn = () => fetchWeather(lat, lon, city);
-          setInterval(() => fetchWeather(lat, lon, city), 30 * 60 * 1000);
+          startWeatherRefresh(() => fetchWeather(lat, lon, city));
         } catch {
           await fetchWeather(lat, lon, '');
-          window._fetchWeatherFn = () => fetchWeather(lat, lon, '');
+          startWeatherRefresh(() => fetchWeather(lat, lon, ''));
         }
       },
       () => showZipPrompt('Location access denied — please enter ZIP'),
@@ -803,8 +975,7 @@
       try {
         const loc = await lookupZip(savedZip);
         await fetchWeather(loc.lat, loc.lon, savedCity || loc.name);
-        window._fetchWeatherFn = () => fetchWeather(loc.lat, loc.lon, savedCity || loc.name);
-        setInterval(() => fetchWeather(loc.lat, loc.lon, savedCity || loc.name), 30 * 60 * 1000);
+        startWeatherRefresh(() => fetchWeather(loc.lat, loc.lon, savedCity || loc.name));
         return;
       } catch (e) { /* fall through */ }
     }
